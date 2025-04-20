@@ -331,5 +331,166 @@ weights = torch.tensor([0.2126, 0.7152, 0.0722])
 
 > Tips：关于命名这个操作看起来挺美好，主要是适配人阅读习惯，但是对齐它也是很困难的事情，所以这个特性或许并不怎么好用。
 
+## PyTorch中使用GPU运算
 
+### 创建时指定设备
+
+```python
+points_gpu = torch.tensor([[4.0, 1.0], [5.0, 3.0], [2.0, 1.0]], device='cuda')
+```
+
+### 移动到指定设备
+
+```python
+points_gpu = points.to(device='cuda')
+points_gpu = points.to(device='cuda:0')
+```
+
+### 回传到CPU
+
+```python
+points_cpu = points_gpu.to(device='cpu')
+# 还有更简略的写法如下，但是我觉得用to()更规范一点，而且to()还可以支持其他的操作
+points_gpu = points.cuda()
+points_gpu = points.cuda(0)
+points_cpu = points_gpu.cpu()
+```
+
+## PyTorch张量底层实现逻辑
+
+### 哪种连续存储？
+
+<p style="color: red; font-weight: bold;">带状连续存储</p>
+
+![](../images/ch04_2025-04-19_10-51-32.png)
+
+![](../images/ch04_2025-04-19_11-02-15.png)
+
+### 底层存储逻辑
+
+- storage方法访问内存
+
+```python
+points = torch.tensor([[4.0, 1.0], [5.0, 3.0], [2.0, 1.0]])
+points.storage()
+# outs:
+# 4.0
+# 1.0
+# 5.0
+# 3.0
+# 2.0
+# 1.0
+# [torch.FloatStorage of size 6]
+```
+
+```python
+points_storage = points.storage()
+points_storage[0]
+# outs:
+# 4.0
+
+points_storage[0] = 2 # 给存储区位置0赋值2
+points
+# outs:
+# tensor([[2., 1.], [5., 3.], [2., 1.]])
+```
+
+- 关于带下划线的操作
+    - 带下划线的操作仅作为Tensor对象的方法存在
+    - 带下划线的操作通过修改输入张量，而不是创建一个新的输出张量，然后返回新创建的输出张量。
+    - 任何不带下划线的方法都不会改变源张量，而是返回一个新的张量。
+
+```python
+import torch
+a = torch.ones(3, 2)
+a
+# outs:
+# tensor([[1., 1.], [1., 1.], [1., 1.]])
+
+b = a.zero_()
+b
+# outs:
+# tensor([[0., 0.], [0., 0.], [0., 0.]])
+
+a
+# outs:
+# tensor([[0., 0.], [0., 0.], [0., 0.]])
+```
+
+- 大小、偏移量、步长之间的关系
+
+![](../images/ch04_2025-04-19_11-46-15.png)
+
+![](../images/ch04_2025-04-19_11-53-08.png)
+
+- 通过代码理解偏移量和步长
+
+```python
+points = torch.tensor([[4.0, 1.0, 3.0, 2.0], [5.0, 3.0, 7.0, 8.0], [2.0, 1.0, 9.0, 5.0], [3.0, 8.0, 4.0, 5.0]]) # 先生成一个新的tensor
+second_point = points[1:,1:] # 从原始tensor中摘取一个子tensor
+second_point # 让我们看看截取的子tensor对不对
+# outs:
+# tensor([[3., 7., 8.], [1., 9., 5.], [8., 4., 5.]])
+points.storage_offset() # 原tensor的偏移量
+# outs: 0
+second_point.storage_offset() # 子tensor的偏移量
+# outs: 5 # 看起来跟我们猜测的一样 # 再来看一下步长
+points.stride() # 原始tensor的步长
+# outs: (4, 1)
+second_point.stride() # 子tensor的步长
+# outs: (4, 1)
+```
+
+```python
+second_point = points[1:,1:].clone()
+second_point[0,0] = 10.0
+second_point
+# outs:
+# tensor([[10., 7., 8.], [1., 9., 5.], [8., 4., 5.]])
+
+points
+# outs:
+# tensor([[4., 1., 3., 2.], [5., 3., 7., 8.], [2., 1., 9., 5.], [3., 8., 4., 5.]])
+```
+
+- 转置之后发生了什么
+
+```python
+points = torch.tensor([[4.0, 1.0], [5.0, 3.0], [2.0, 1.0]])
+points
+# outs:
+# tensor([[4., 1.], [5., 3.], [2., 1.]])
+
+points_t = points.t() # t()方法是用于二维张量转置时对transpose()方法的简写
+points_t
+# outs:
+# tensor([[4., 5., 2.], [1., 3., 1.]])
+
+# 验证这两个tensor是否用的一个存储区
+id(points.storage()) == id(points_t.storage())
+
+points.stride()
+# outs: (2, 1)
+
+points_t.stride()
+# outs: (1, 2)
+```
+
+- 转置之后发生了什么
+
+![](../images/ch04_2025-04-19_13-49-01.png)
+
+- 关于连续张量
+
+![](../images/ch04_2025-04-19_13-52-41.png)
+
+```python
+points.is_contiguous()
+# outs: True
+
+points_t.is_contiguous()
+# outs: False
+```
+
+![](../images/ch04_2025-04-19_14-01-01.png)
 
